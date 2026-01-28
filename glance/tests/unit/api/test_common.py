@@ -140,6 +140,30 @@ class TestSizeCheckedIter(testtools.TestCase):
         self.assertEqual('E', next(checked_image))
         self.assertRaises(exception.GlanceException, next, checked_image)
 
+    @mock.patch('glance.api.common.image_send_notification')
+    def test_notification_sent_on_close(self, mock_image_send_notification):
+        """Verify that notification is sent when close() is called."""
+        resp = self._get_webob_response()
+        meta = self._get_image_metadata()
+        notifier = mock.Mock()
+        checked_image = glance.api.common.size_checked_iter(
+            resp, meta, 4, ['AB', 'CD'], notifier)
+
+        # Consume the iterator
+        self.assertEqual('AB', next(checked_image))
+        self.assertEqual('CD', next(checked_image))
+        self.assertRaises(StopIteration, next, checked_image)
+
+        # Notification should not be sent yet
+        mock_image_send_notification.assert_not_called()
+
+        # Call close() to simulate WSGI server cleanup
+        checked_image.close()
+
+        # Now notification should be sent
+        mock_image_send_notification.assert_called_once_with(
+            4, 4, meta, resp.request, notifier)
+
 
 class TestThreadPool(testtools.TestCase):
     def setUp(self):

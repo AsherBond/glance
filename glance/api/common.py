@@ -34,38 +34,48 @@ _CACHED_THREAD_POOL = {}
 
 def size_checked_iter(response, image_meta, expected_size, image_iter,
                       notifier):
-    image_id = image_meta['id']
-    bytes_written = 0
+    class ImageIterator:
+        def __init__(self, image_id):
+            self.image_id = image_id
+            self.bytes_written = 0
+            self.iterator = iter(image_iter)
 
-    def notify_image_sent_hook(env):
-        image_send_notification(bytes_written, expected_size,
-                                image_meta, response.request, notifier)
+        def __iter__(self):
+            return self
 
-    # Add hook to process after response is fully sent
-    if 'eventlet.posthooks' in response.request.environ:
-        response.request.environ['eventlet.posthooks'].append(
-            (notify_image_sent_hook, (), {}))
+        def __next__(self):
+            try:
+                chunk = next(self.iterator)
+                self.bytes_written += len(chunk)
+                return chunk
+            except StopIteration:
+                if expected_size != self.bytes_written:
+                    msg = (
+                        _LE("Backend storage for image %(image_id)s "
+                            "disconnected after writing only "
+                            "%(bytes_written)d bytes") %
+                        {'image_id': self.image_id,
+                         'bytes_written': self.bytes_written})
+                    LOG.error(msg)
+                    raise exception.GlanceException(
+                        _("Corrupt image download for image %(image_id)s") %
+                        {'image_id': self.image_id})
+                raise
+            except Exception as err:
+                with excutils.save_and_reraise_exception():
+                    msg = (
+                        _LE("An error occurred reading from backend "
+                            "storage for image %(image_id)s: %(err)s") %
+                        {'image_id': self.image_id, 'err': err})
+                    LOG.error(msg)
 
-    try:
-        for chunk in image_iter:
-            yield chunk
-            bytes_written += len(chunk)
-    except Exception as err:
-        with excutils.save_and_reraise_exception():
-            msg = (_LE("An error occurred reading from backend storage for "
-                       "image %(image_id)s: %(err)s") % {'image_id': image_id,
-                                                         'err': err})
-            LOG.error(msg)
+        def close(self):
+            """Called by WSGI server when response is complete."""
+            image_send_notification(self.bytes_written, expected_size,
+                                    image_meta, response.request,
+                                    notifier)
 
-    if expected_size != bytes_written:
-        msg = (_LE("Backend storage for image %(image_id)s "
-                   "disconnected after writing only %(bytes_written)d "
-                   "bytes") % {'image_id': image_id,
-                               'bytes_written': bytes_written})
-        LOG.error(msg)
-        raise exception.GlanceException(_("Corrupt image download for "
-                                          "image %(image_id)s") %
-                                        {'image_id': image_id})
+    return ImageIterator(image_meta['id'])
 
 
 def image_send_notification(bytes_written, expected_size, image_meta, request,
