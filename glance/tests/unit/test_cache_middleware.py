@@ -273,7 +273,7 @@ class TestCacheMiddlewareProcessRequest(base.IsolatedUnitTest):
 
         cache_filter = ProcessRequestTestCacheFilter()
         response = cache_filter._process_v2_request(
-            request, image_id, dummy_img_iterator, image_meta)
+            request, image_id, dummy_img_iterator(), image_meta)
         self.assertEqual('application/octet-stream',
                          response.headers['Content-Type'])
         self.assertEqual('c1234', response.headers['Content-MD5'])
@@ -300,7 +300,7 @@ class TestCacheMiddlewareProcessRequest(base.IsolatedUnitTest):
 
         cache_filter = ProcessRequestTestCacheFilter()
         response = cache_filter._process_v2_request(
-            request, image_id, dummy_img_iterator, image_meta)
+            request, image_id, dummy_img_iterator(), image_meta)
         self.assertNotIn('Content-MD5', response.headers.keys())
 
     def test_process_request_without_download_image_policy(self):
