@@ -570,7 +570,7 @@ validation.
 Possible values:
     * An OpenSSL message digest algorithm identifier
 
-Relation options:
+Related options:
     * None
 
 """)),
